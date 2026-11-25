@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Urna Eletrônica - Grêmio Estudantil</title>
+<!-- Autor: Guilherme Henrique Santos da Costa | Licença: MIT com cláusula de autorização comercial -->
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none!important}
+body{background:#d3d3d3;font-family:Arial,sans-serif;min-height:100vh;display:flex;justify-content:center;align-items:center;padding:8px}
+.urna{max-width:1000px;width:100%;background:#e0e0e0;border:2px solid #aaa;border-radius:20px;padding:16px;display:flex;gap:16px;box-shadow:0 10px 30px #0003}
+.esq{flex:2;position:relative}
+.disp{background:#fff;border:5px solid #666;border-radius:15px;padding:12px;min-height:420px;height:100%;display:flex;flex-direction:column;align-items:center;gap:12px}
+.tit{font-weight:bold;color:#0047ab;letter-spacing:2px;text-transform:uppercase}
+.foto{width:220px;height:220px;max-width:45vw;max-height:45vw;background:#eee;border:3px solid #0047ab;border-radius:10px;display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:3rem}
+.foto img{width:100%;height:100%;object-fit:cover}
+#nome{font-size:clamp(1.3rem,5vw,2.2rem);font-weight:bold;text-align:center;min-height:2.6em}
+#num{font-family:'Courier New',monospace;font-size:clamp(2.5rem,12vw,4.5rem);letter-spacing:8px;background:#333;color:#fc0;padding:6px 14px;border-radius:10px;min-width:2.2em;min-height:1.3em;text-align:center}
+#st{font-size:.75rem;color:#555;margin-top:auto}
+.dir{flex:1;display:flex;flex-direction:column;gap:14px}
+.tec{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;background:#c0c0c0;padding:12px;border-radius:15px}
+button{font-family:inherit;cursor:pointer;border:0;font-weight:bold;color:#fff;border-radius:10px}
+.t{background:#505050;font-size:1.8rem;padding:16px 0;box-shadow:0 5px 0 #2a2a2a}
+.z{grid-column:span 3}
+.ac{display:flex;gap:8px}
+.a{flex:1;padding:14px 4px;font-size:1rem;box-shadow:0 5px 0 #0004}
+.t:active,.a:active{transform:translateY(4px);box-shadow:none}
+#tela{position:absolute;inset:0;background:#1e2a3cf5;color:#fff;border-radius:15px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:20px;z-index:5}
+#cod{font-family:monospace;font-size:clamp(2rem,10vw,3rem);letter-spacing:6px;color:#fc0}
+@media(max-width:700px){.urna{flex-direction:column;padding:10px}.disp{min-height:0}.t{padding:12px 0}}
+</style></head>
+<body>
+<div class="urna">
+  <div class="esq">
+    <div class="disp">
+      <div class="tit">Grêmio Estudantil</div>
+      <div class="foto"><img id="img" hidden alt="foto"><span id="sf">📷</span></div>
+      <div id="nome"></div><div id="num"></div><div id="st"></div>
+    </div>
+    <div id="tela"><h2 id="tt"></h2><div id="cod"></div><p id="ts"></p>
+      <button id="bdl" class="a" style="background:#27ae60;flex:none" hidden>⬇ Baixar arquivo da urna</button></div>
+  </div>
+  <div class="dir">
+    <div class="tec" id="tec"></div>
+    <div class="ac">
+      <button class="a" style="background:#999" id="bb">BRANCO</button>
+      <button class="a" style="background:#f39c12" id="bc">CORRIGE</button>
+      <button class="a" style="background:#27ae60" id="bk">CONFIRMA</button>
+    </div>
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<script src="comum.js"></script>
+<script>
+let S = ls.get('urna') || { cod: cod(6), estado: 'bloqueada', total: 0 };
+let V = '', C = null, P, tLib, ac = null;
+const save = () => ls.set('urna', S);
+if (S.estado === 'liberada') S.estado = 'bloqueada';
+save();
+
+// ---- Sons ----
+function nota(f, t, d, v = .25) { const o = ac.createOscillator(), g = ac.createGain(); o.connect(g); g.connect(ac.destination);
+  o.frequency.value = f; g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(.01, t + d); o.start(t); o.stop(t + d); }
+function som(k) { try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); let t = ac.currentTime;
+  ({ tecla: [[800, .1]], branco: [[400, .2]], liberado: [[500, .1], [700, .1], [900, .15]],
+     confirma: [[1320, .08], [1175, .08], [1110, .08], [1320, .12], [1480, .2]] })[k].forEach(([f, d]) => { nota(f, t, d); t += d; }); } catch {} }
+
+// ---- Interface ----
+function tela() {
+  const t = $('#tela'); $('#bdl').hidden = true; $('#cod').textContent = ''; $('#ts').textContent = '';
+  if (!S.cfg) { $('#tt').textContent = 'Código de pareamento'; $('#cod').textContent = S.cod; $('#ts').textContent = 'Digite este código no painel do mesário'; }
+  else if (S.estado === 'encerrada') { $('#tt').textContent = '✅ Votação encerrada'; $('#ts').textContent = S.total + ' votos registrados'; $('#bdl').hidden = false; }
+  else if (S.estado === 'bloqueada') { $('#tt').textContent = '🔒 Urna bloqueada'; $('#ts').textContent = 'Aguarde a liberação do mesário'; }
+  else { t.hidden = true; return; }
+  t.hidden = false;
+}
+function disp() {
+  const ch = S.cfg ? S.cfg.chapas : [], c = ch.find(x => x.numero === V); let nome = '', foto = '';
+  if (V === 'branco') nome = 'BRANCO'; else if (c) { nome = c.nome; foto = c.foto; } else if (V.length === 2) nome = 'NULO'; else nome = V ? '...' : '';
+  $('#nome').textContent = nome; $('#num').textContent = V === 'branco' ? '' : V;
+  const i = $('#img'); if (foto) { i.src = foto; i.hidden = false; $('#sf').hidden = true; } else { i.hidden = true; $('#sf').hidden = false; }
+}
+function ui() { tela(); disp(); $('#st').textContent = (S.cfg ? 'Urna ' + S.n + ' · ' : '') + (C && C.open ? '🟢 conectada' : '⚪ sem conexão'); }
+const env = () => { if (C && C.open) C.send({ t: 'estado', estado: S.estado, total: S.total, c: S.cfg && S.cfg.aoVivo ? S.c : undefined }); };
+
+function bloq() { S.estado = 'bloqueada'; clearTimeout(tLib); V = ''; save(); env(); ui(); }
+function lib() {
+  if (S.estado !== 'bloqueada' || !S.cfg) return;
+  S.estado = 'liberada'; V = ''; save(); som('liberado'); env(); ui();
+  clearTimeout(tLib); tLib = setTimeout(() => { if (S.estado === 'liberada') bloq(); }, 120000); // expira em 2 min
+}
+
+// ---- Teclado ----
+[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].forEach(n => { const b = document.createElement('button');
+  b.className = 't' + (n === 0 ? ' z' : ''); b.textContent = n; b.onclick = () => dig('' + n); $('#tec').append(b); });
+function dig(d) { if (V === 'branco') V = ''; if (V.length < 2) V += d; som('tecla'); disp(); }
+$('#bb').onclick = () => { if (S.estado !== 'liberada') return; V = 'branco'; som('branco'); disp(); };
+$('#bc').onclick = () => { V = ''; disp(); som('tecla'); };
+$('#bk').onclick = () => {
+  if (V === '99') { V = ''; disp(); return admin(); }
+  if (S.estado !== 'liberada') { V = ''; disp(); return toast('Urna bloqueada'); }
+  if (!V) return toast('Digite um número ou BRANCO');
+  const k = V === 'branco' ? 'branco' : S.cfg.chapas.some(x => x.numero === V) ? V : 'nulo';
+  S.c[k] = (S.c[k] || 0) + 1; S.total++; som('confirma'); toast('Voto confirmado!'); bloq();
+};
+
+// ---- Acesso manual (código 99 + CONFIRMA) ----
+async function admin() {
+  if (!S.cfg) return toast('Urna ainda não pareada');
+  const p = prompt('PIN do mesário'); if (!p) return;
+  if (await sha(S.cfg.id + p) !== S.pinHash) return toast('PIN incorreto');
+  const o = prompt('1 = liberar um voto (manual)\n2 = ZERAR esta urna');
+  if (o === '1') { S.log = (S.log || []).concat(new Date().toISOString()); lib(); }
+  else if (o === '2' && confirm('Apagar TODOS os votos desta urna?')) { localStorage.removeItem('urna'); location.reload(); }
+}
+
+// ---- Conexão com o painel ----
+function iniciar() {
+  P = new Peer(PFX + 'u-' + S.cod);
+  P.on('open', ui);
+  P.on('error', e => { if (e.type === 'unavailable-id') { P.destroy(); setTimeout(iniciar, 4000); } });
+  P.on('disconnected', () => P.reconnect());
+  P.on('connection', conn => { conn.on('data', m => cmd(conn, m)); conn.on('close', () => { if (C === conn) { C = null; ui(); } }); });
+}
+async function cmd(conn, m) {
+  if (m.t === 'parear') {
+    const mesmo = S.cfg && S.cfg.id === m.cfg.id;
+    if ((mesmo && S.pinHash !== m.pinHash) || (S.cfg && !mesmo && S.total > 0)) {
+      conn.send({ t: 'erro', msg: 'recusada (PIN incorreto ou urna já usada em outra eleição)' }); setTimeout(() => conn.close(), 300); return; }
+    if (!mesmo) { S.cfg = m.cfg; S.pinHash = m.pinHash; S.estado = 'bloqueada'; S.total = 0; S.log = [];
+      S.c = {}; m.cfg.chapas.forEach(x => S.c[x.numero] = 0); S.c.branco = 0; S.c.nulo = 0; }
+    S.n = m.n; conn.ok = true; if (C && C !== conn) C.close(); C = conn; save(); env(); ui();
+    if (S.final && S.estado === 'encerrada') C.send({ t: 'final', ...S.final });
+    return;
+  }
+  if (!conn.ok) return;
+  if (m.t === 'liberar') lib();
+  else if (m.t === 'bloquear' && S.estado === 'liberada') bloq();
+  else if (m.t === 'encerrar' && S.estado !== 'encerrada') {
+    S.estado = 'encerrada'; clearTimeout(tLib); V = '';
+    const d = { el: S.cfg.id, n: S.n, c: S.c, total: S.total, manual: (S.log || []).length };
+    S.final = { dados: d, hash: await sha(JSON.stringify(d) + S.pinHash) };
+    save(); ui(); if (C && C.open) C.send({ t: 'final', ...S.final });
+  } else if (m.t === 'status') env();
+}
+$('#bdl').onclick = () => { const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(S.final)], { type: 'application/json' }));
+  a.download = 'urna-' + String(S.n).padStart(2, '0') + '.json'; a.click(); };
+
+iniciar(); ui(); wake();
+</script></body></html>

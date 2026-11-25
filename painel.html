@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Painel do Mesário</title>
+<!-- Autor: Guilherme Henrique Santos da Costa | Licença: MIT com cláusula de autorização comercial -->
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none!important}
+body{font-family:Arial,sans-serif;background:#eef1f5;color:#222;padding-bottom:76px}
+header{background:#0047ab;color:#fff;padding:14px 16px;font-weight:bold;position:sticky;top:0;z-index:5}
+main{padding:12px;max-width:600px;margin:auto}
+.card{background:#fff;border-radius:12px;padding:12px;margin-bottom:10px;box-shadow:0 1px 4px #0002}
+input{width:100%;padding:12px;border:1px solid #bbb;border-radius:8px;font-size:1rem;margin:4px 0}
+input[type=checkbox]{width:auto;margin-right:6px}
+button{border:0;border-radius:10px;padding:14px;font-size:1rem;font-weight:bold;color:#fff;background:#0047ab;width:100%;margin-top:6px}
+.g{background:#27ae60}.r{background:#e74c3c}.y{background:#f39c12}.c{background:#7f8c8d}
+.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;border-top:1px solid #ccc}
+nav button{border-radius:0;background:#fff;color:#666;margin:0;padding:12px 0;font-size:.85rem}
+nav .on{color:#0047ab;border-top:3px solid #0047ab}
+.bar{background:#dde;border-radius:6px;height:20px;overflow:hidden;margin:4px 0}.bar i{display:block;height:100%;background:#0047ab}
+small{color:#666}
+</style></head>
+<body>
+<header>📟 Painel do Mesário</header>
+<main id="app"></main>
+<nav id="nav" hidden>
+  <button data-t="u">📟<br>Urnas</button><button data-t="a">📊<br>Apuração</button><button data-t="m">⚙️<br>Mais</button>
+</nav>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="comum.js"></script>
+<script>
+let E = ls.get('el'), cn = {}, P, tab = 'u', tmp = { pin: '', av: false };
+let R = [{ numero: '12', nome: 'Chapa 1', foto: '' }, { numero: '25', nome: 'Chapa 2', foto: '' }, { numero: '40', nome: 'Chapa 3', foto: '' }];
+const A = $('#app'), save = () => ls.set('el', E);
+
+// ---------- Criação da eleição ----------
+function sync() {
+  A.querySelectorAll('[data-k]').forEach(i => R[i.dataset.i][i.dataset.k] = i.value.trim());
+  if ($('#pin')) { tmp.pin = $('#pin').value; tmp.av = $('#av').checked; }
+}
+function setup() {
+  $('#nav').hidden = true;
+  A.innerHTML = `<div class="card"><h3>Nova eleição</h3>
+    <input id="pin" type="password" placeholder="PIN do mesário (mín. 4)" value="${tmp.pin}">
+    <label><input type="checkbox" id="av" ${tmp.av ? 'checked' : ''}> Apuração parcial ao vivo</label><br>
+    <small>Com apuração ao vivo, quem vê o painel pode deduzir o último voto de cada urna. Desligada, o resultado só aparece ao encerrar.</small></div>` +
+    R.map((c, i) => `<div class="card"><div class="row"><input data-i="${i}" data-k="numero" value="${c.numero}" maxlength="2" inputmode="numeric" placeholder="Nº" style="flex:.4">
+      <input data-i="${i}" data-k="nome" value="${c.nome}" placeholder="Nome da chapa"></div>
+      <input type="file" accept="image/*" data-f="${i}"> ${c.foto ? '<small>✔ foto adicionada</small>' : ''}
+      <button class="r" data-a="rm" data-i="${i}">Remover chapa</button></div>`).join('') +
+    `<button class="c" data-a="add">+ Adicionar chapa</button><button class="g" data-a="ok">Criar eleição</button>`;
+}
+
+// ---------- Apuração ----------
+function soma() {
+  const t = {}; E.chapas.forEach(c => t[c.numero] = 0); t.branco = 0; t.nulo = 0;
+  let tot = 0, fin = 0, vis = true; const us = Object.values(E.urnas);
+  us.forEach(u => { tot += u.total || 0; if (u.final) fin++;
+    if (u.c) for (const k in u.c) t[k] = (t[k] || 0) + u.c[k]; else if ((u.total || 0) > 0) vis = false; });
+  return { t, tot, fin, n: us.length, vis };
+}
+
+// ---------- Telas ----------
+function vUrnas() {
+  const ns = Object.keys(E.urnas).sort((a, b) => a - b);
+  A.innerHTML = `<div class="card"><div class="row"><input id="cd" placeholder="Código da urna" maxlength="6" style="text-transform:uppercase">
+    <button data-a="par" style="flex:.6">Parear</button></div><small>${ns.length}/10 urnas pareadas</small></div>` +
+    ns.map(n => { const u = E.urnas[n], on = cn[n] && cn[n].open;
+      const st = u.final ? '✅ encerrada' : !on ? '⚪ offline' : u.estado === 'liberada' ? '🟡 votando' : '🔒 bloqueada';
+      const bt = u.final ? '' : on ? (u.estado === 'liberada'
+        ? `<button class="y" data-a="blq" data-i="${n}">Cancelar liberação</button>`
+        : `<button class="g" data-a="lib" data-i="${n}">🔓 Liberar voto</button>`)
+        : `<button class="c" data-a="rec" data-i="${n}">Reconectar</button>`;
+      return `<div class="card"><div class="row"><b>Urna ${n}</b><span style="text-align:right">${st}</span></div>
+        <small>${u.cod || '—'} · ${u.total || 0} votos</small>${bt}</div>`; }).join('');
+}
+function vApur() {
+  const s = soma(), d = Math.max(1, s.tot);
+  const L = [...E.chapas.map(c => [`${c.nome} (${c.numero})`, s.t[c.numero]]), ['Brancos', s.t.branco], ['Nulos', s.t.nulo]];
+  A.innerHTML = `<div class="card" id="res"><h3>Apuração</h3>
+    <small>${s.tot} votos · ${s.fin}/${s.n} urnas encerradas · ${new Date().toLocaleString('pt-BR')}</small>` +
+    (s.vis ? L.map(([n, v]) => `<div style="margin-top:8px"><div class="row"><span>${n}</span><b style="text-align:right">${v} (${(100 * v / d).toFixed(1)}%)</b></div>
+      <div class="bar"><i style="width:${100 * v / d}%"></i></div></div>`).join('')
+      : '<p style="margin-top:8px">🔒 Resultado parcial oculto. Aparece quando todas as urnas encerrarem.</p>') +
+    `</div><button class="r" data-a="enc">⏹ Encerrar votação (todas as urnas)</button>
+     <button class="c" data-a="img">📸 Baixar imagem do resultado</button>`;
+}
+function vMais() {
+  A.innerHTML = `<div class="card"><h3>Importar arquivo de urna</h3><small>Contingência: use se uma urna estiver offline ao encerrar.</small>
+    <input type="file" id="imp" accept=".json" multiple></div>
+    <div class="card"><small>Eleição ${E.id} · apuração ao vivo: ${E.aoVivo ? 'sim' : 'não'}</small>
+    <button class="r" data-a="nova">Apagar eleição e começar outra</button></div>`;
+}
+function draw() {
+  if (!E) return setup();
+  $('#nav').hidden = false;
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === tab));
+  ({ u: vUrnas, a: vApur, m: vMais })[tab]();
+}
+function refresh() { if (!E) return; const f = document.activeElement; if (f && f.id === 'cd') return; draw(); }
+
+// ---------- Conexão ----------
+function conectar(n, cod, quieto) {
+  const conn = P.connect(PFX + 'u-' + cod, { reliable: true }); cn[n] = conn;
+  const to = setTimeout(() => { if (!conn.open) { conn.close(); if (!quieto) toast('Não conectou. Confira o código.'); } }, 10000);
+  conn.on('open', () => { clearTimeout(to);
+    conn.send({ t: 'parear', n, pinHash: E.pinHash, cfg: { id: E.id, chapas: E.chapas, aoVivo: E.aoVivo } }); });
+  conn.on('data', m => {
+    if (m.t === 'estado') { const u = E.urnas[n] || (E.urnas[n] = { cod });
+      if (!u.final) { u.estado = m.estado; u.total = m.total; if (m.c) u.c = m.c; } save(); refresh(); }
+    else if (m.t === 'final') recebe(m, true);
+    else if (m.t === 'erro') toast('Urna ' + n + ': ' + m.msg);
+  });
+  conn.on('close', () => { if (!E || !E.urnas[n]) delete cn[n]; refresh(); });
+}
+async function recebe(m, ao) {
+  const d = m.dados;
+  if (!d || d.el !== E.id || await sha(JSON.stringify(d) + E.pinHash) !== m.hash) return toast('Arquivo recusado (outra eleição ou adulterado)');
+  const u = E.urnas[d.n] || (E.urnas[d.n] = {});
+  if (u.final && !ao) return toast('Urna ' + d.n + ' já apurada');
+  Object.assign(u, { final: { dados: d, hash: m.hash }, c: d.c, total: d.total, estado: 'encerrada' }); save(); refresh();
+}
+
+// ---------- Eventos ----------
+$('#nav').onclick = e => { const b = e.target.closest('button'); if (b) { tab = b.dataset.t; draw(); } };
+A.onchange = async e => {
+  const t = e.target;
+  if (t.dataset.f !== undefined && t.files[0]) { sync(); R[t.dataset.f].foto = await redim(t.files[0]); setup(); }
+  else if (t.id === 'imp') for (const f of t.files) { try { await recebe(JSON.parse(await f.text())); } catch { toast('Arquivo inválido: ' + f.name); } }
+};
+A.onclick = async e => {
+  const b = e.target.closest('button'); if (!b) return; const a = b.dataset.a, i = b.dataset.i;
+  if (a === 'add') { sync(); R.push({ numero: '', nome: '', foto: '' }); setup(); }
+  else if (a === 'rm') { sync(); R.splice(i, 1); setup(); }
+  else if (a === 'ok') {
+    sync(); const ns = R.map(c => c.numero);
+    if (tmp.pin.length < 4) return toast('PIN com 4 ou mais caracteres');
+    if (!R.length || R.some(c => !/^\d{2}$/.test(c.numero) || !c.nome || c.numero === '99') || new Set(ns).size !== ns.length)
+      return toast('Use números únicos de 2 dígitos (99 é reservado) e preencha os nomes');
+    const id = cod(8);
+    E = { id, chapas: R, aoVivo: tmp.av, pinHash: await sha(id + tmp.pin), urnas: {} }; save(); draw();
+  }
+  else if (a === 'par') {
+    const c = $('#cd').value.trim().toUpperCase();
+    if (c.length !== 6) return toast('O código tem 6 caracteres');
+    if (Object.values(E.urnas).some(u => u.cod === c)) return toast('Essa urna já está pareada');
+    let n = 1; while (E.urnas[n] || cn[n]) n++;
+    if (n > 10) return toast('Máximo de 10 urnas');
+    conectar(n, c);
+  }
+  else if (a === 'lib') cn[i].send({ t: 'liberar' });
+  else if (a === 'blq') cn[i].send({ t: 'bloquear' });
+  else if (a === 'rec') conectar(i, E.urnas[i].cod);
+  else if (a === 'enc') {
+    if (!confirm('Encerrar a votação em todas as urnas conectadas? Não dá para desfazer.')) return;
+    let off = 0; for (const n in E.urnas) { if (E.urnas[n].final) continue; if (cn[n] && cn[n].open) cn[n].send({ t: 'encerrar' }); else off++; }
+    toast(off ? off + ' urna(s) offline: reconecte ou importe o arquivo delas' : 'Encerrando...');
+  }
+  else if (a === 'img') html2canvas($('#res'), { scale: 2, backgroundColor: '#fff' }).then(c => {
+    const l = document.createElement('a'); l.download = 'resultado_' + new Date().toISOString().slice(0, 10) + '.png'; l.href = c.toDataURL(); l.click(); });
+  else if (a === 'nova' && confirm('Apagar a eleição deste painel? As urnas precisam ser zeradas separadamente (código 99).')) {
+    Object.values(cn).forEach(c => c.close()); cn = {}; localStorage.removeItem('el'); E = null; tab = 'u'; draw(); }
+};
+
+// ---------- Início ----------
+P = new Peer();
+P.on('open', () => { if (E) for (const n in E.urnas) { const u = E.urnas[n]; if (u.cod && !u.final) conectar(n, u.cod, 1); } });
+P.on('disconnected', () => P.reconnect());
+P.on('error', e => { if (e.type === 'peer-unavailable') toast('Urna não encontrada. Ela está aberta e com internet?'); });
+draw(); wake();
+</script></body></html>
